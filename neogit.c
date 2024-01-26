@@ -349,12 +349,12 @@ void add_directory_to_staging(const char *dir_path) {
     FILE *stagingfile = fopen(".neogit/staging", "a+");
     if(stagingfile == NULL) {
         perror("Error getting staging directory");
+        closedir(dir);
         return;
     }
 
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
-        print;
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
@@ -372,7 +372,7 @@ void add_directory_to_staging(const char *dir_path) {
             add_to_staging(entry_path, 'n');
         }
     }
-    fprintf(stagingfile, "%s\n", entry->d_name);
+    fprintf(stagingfile, "%s\n", dir_path);
     fclose(stagingfile);
     closedir(dir);
 }
@@ -393,10 +393,10 @@ void run_add_n()
         snprintf(file_path, MAX_FILENAME_LENGTH, "%s", entry->d_name);
             
         if(check_staging_area(file_path) == 0){
-            printf("*%s\tstaging\n", file_path);
+            printf("%s\t\tstaging\n", file_path);
         }
         else{
-            printf("*%s\tnot staging\n", file_path);
+            printf("%s\t\tnot staging\n", file_path);
         }
     }
     closedir(dir);
