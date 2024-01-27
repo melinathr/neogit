@@ -12,11 +12,12 @@
 #define MAX_LINE_LENGTH 1000
 #define MAX_MESSAGE_LENGTH 1000
 
-#define print fprintf(stdout, "%s\n", entry->d_name)
+#define print fprintf(stdout, "i = %d , argc = %d\n", i, argc)
 
 
 int neogit_exist();
 int file_exists(const char *filename);
+int fnmatch(const char *pattern, const char *string);
 
 int run_global_config(int argc , char *argv[]);
 int run_lokal_config(int argc , char *argv[]);
@@ -28,8 +29,11 @@ int run_add(int argc, char *argv[]);
 int add_to_staging(char *filepath , char mode);
 void add_directory_to_staging(const char *dir_path);
 int check_staging_area(char* filepath);
-int fnmatch(const char *pattern, const char *string);
 void run_add_n();
+
+int run_reset(int argc, char * const argv[]);
+int remove_from_staging(char *filepath, char mode);
+int run_reset_undo();
 
 
 int neogit_exist()
@@ -168,6 +172,9 @@ int creat_configs(char *username, char *email)
     file = fopen(".neogit/tracks", "w");
     fclose(file);
 
+    file = fopen(".neogit/reset", "w");
+    fclose(file);
+
     return 0;
 }
 
@@ -208,7 +215,7 @@ int run_init(int argc, char *argv[])
     if (chdir(cwd) != 0) return 1;
 
     if(exists){ 
-        printf("neogit repository has already initialized");
+        fprintf(stdout, "neogit repository has already initialized");
         return 1;
     }
     else{
@@ -224,7 +231,7 @@ int run_init(int argc, char *argv[])
     //     return 1;
     // }
     return creat_configs("mel", "example@gmail.com");
-    printf("neogit repository initialized\n");
+    fprintf(stdout,"neogit repository initialized\n");
     return 0;
 }
 
@@ -244,7 +251,7 @@ int run_add(int argc, char *argv[])
         for(int i = 3; i < argc; i++)
         {
             if(strchr(argv[i], '*') != NULL)
-                return add_to_staging(argv[i], 'w');
+                add_to_staging(argv[i], 'w');
             else
                 add_to_staging(argv[i], 'n');
         }
@@ -328,10 +335,18 @@ int add_to_staging(char *filepath , char mode)
             return 1;
         }
         struct dirent *entry;
+        bool found = false;
         while ((entry = readdir(dir)) != NULL) {
             if (fnmatch(filepath, entry->d_name) == 0) {
                 fprintf(stagingfile, "%s\n", entry->d_name);
+                found = true;
             }
+        }
+        if(! found){
+            perror("file does not exist");
+            fclose(stagingfile);
+            closedir(dir);
+            return 1;
         }
         closedir(dir);
     }
@@ -349,12 +364,12 @@ void add_directory_to_staging(const char *dir_path) {
     FILE *stagingfile = fopen(".neogit/staging", "a+");
     if(stagingfile == NULL) {
         perror("Error getting staging directory");
+        closedir(dir);
         return;
     }
 
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
-        print;
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
@@ -372,7 +387,7 @@ void add_directory_to_staging(const char *dir_path) {
             add_to_staging(entry_path, 'n');
         }
     }
-    fprintf(stagingfile, "%s\n", entry->d_name);
+    fprintf(stagingfile, "%s\n", dir_path);
     fclose(stagingfile);
     closedir(dir);
 }
@@ -393,10 +408,10 @@ void run_add_n()
         snprintf(file_path, MAX_FILENAME_LENGTH, "%s", entry->d_name);
             
         if(check_staging_area(file_path) == 0){
-            printf("*%s\tstaging\n", file_path);
+            fprintf(stdout, "%s\t\tstaging\n", file_path);
         }
         else{
-            printf("*%s\tnot staging\n", file_path);
+            fprintf(stdout, "%s\t\tnot staging\n", file_path);
         }
     }
     closedir(dir);
@@ -451,6 +466,176 @@ int fnmatch(const char *pattern, const char *string) {
     return (*pattern == '\0' && *string == '\0') ? 0 : 1;
 }
 
+int run_reset(int argc, char *const argv[]) {
+    if (argc < 3){
+        perror("please specify a file");
+        return 1;
+    }
+    if(neogit_exist == 0)
+    {
+        perror("neogit repository has not initialized yet");
+        return 1;
+    }
+
+    if(strcmp(argv[2], "undo") == 0){
+        run_reset_undo();
+    }
+    else if(strcmp(argv[2], "-f") == 0) {
+        for(int i = 3; i < argc; i++)
+        {
+            if(strchr(argv[i], '*') != NULL){
+                remove_from_staging(argv[i], 'w');
+            }
+            else{
+                remove_from_staging(argv[i], 'n');
+            }   
+        }
+    }
+    else if(strchr(argv[2], '*') != NULL){
+        //w : wildcard
+        return remove_from_staging(argv[2], 'w');
+    }
+    else{
+        // n : normal
+        return remove_from_staging(argv[2], 'n');
+    }
+}
+
+int remove_from_staging(char *filepath, char mode)
+{
+    FILE *stagingfile = fopen(".neogit/staging", "r");
+    if (stagingfile == NULL) {
+        perror("error opening staging file");
+        fclose(stagingfile);
+        return 1;
+    }
+    
+    if(mode == 'n')
+    {
+        if(!file_exists(filepath)){
+            perror("file does not exist");
+            return 1;
+        }
+    }
+
+    DIR *dir = opendir(".");
+    if (dir == NULL) {
+        perror("Error opening current directory");
+        fclose(stagingfile);
+        return 1;
+    }
+    
+    struct dirent *entry;
+    bool found = false;
+        while ((entry = readdir(dir)) != NULL) {
+            if(mode == 'w'){
+                if (fnmatch(filepath, entry->d_name) == 0)
+                    found = true;
+            }
+            else if(mode == 'n'){
+                if (strcmp(filepath, entry->d_name) == 0)
+                    found = true;
+            }
+        }
+        if(! found){
+            perror("file does not exist in staging area");
+            fclose(stagingfile);
+            closedir(dir);
+            return 1;
+        }
+
+    FILE *tmp_file = fopen(".neogit/tmp_staging", "w");
+    if (tmp_file == NULL) return 1;
+
+    char line[MAX_LINE_LENGTH];
+    while (fgets(line, sizeof(line), stagingfile) != NULL) {
+        int length = strlen(line);
+
+        // remove '\n'
+        if (length > 0 && line[length - 1] == '\n') {
+            line[length - 1] = '\0';
+        }
+
+        if(mode == 'n'){
+            if (strcmp(filepath, line) != 0) fputs(line, tmp_file);
+            fputs("\n", tmp_file);
+        }
+            
+        if(mode == 'w'){
+            if(fnmatch(filepath, line) != 0) fputs(line, tmp_file);
+            fputs("\n", tmp_file);
+        }
+    }
+    fclose(stagingfile);
+    fclose(tmp_file);
+
+    remove(".neogit/staging");
+    rename(".neogit/tmp_staging", ".neogit/staging");
+
+    FILE *resetfile = fopen(".neogit/reset", "a");
+    if (resetfile == NULL) {
+        perror("error opening reset file");
+        fclose(resetfile);
+        return 1;
+    }
+    fprintf(resetfile, "%s\n", filepath);
+
+    fprintf(stdout, "reset done\n");
+    return 0;
+}
+
+int run_reset_undo()
+{
+    FILE *stagingfile = fopen(".neogit/staging", "r+");
+    if (stagingfile == NULL) {
+        perror("error opening reset file");
+        fclose(stagingfile);
+        return 1;
+    }
+
+    int lineCount = 0;
+    char ch;
+    while ((ch = fgetc(stagingfile)) != EOF) {
+        if (ch == '\n') {
+            lineCount++;
+        }
+    }
+
+    if (lineCount == 0) {
+        printf("staging file is empty\n");
+        return 1;
+    }
+
+    fseek(stagingfile, 0, SEEK_SET);
+    FILE *tmp_file = fopen(".neogit/tmp_staging", "w");
+    if (tmp_file == NULL) return 1;
+
+    for (int i = 0; i < lineCount - 1; i++) {
+        while (ch = fgetc(stagingfile) != '\n'){
+            fprintf(tmp_file, "%c", ch);
+        }
+        fputs("\n", tmp_file);
+    }
+    
+
+    FILE *resetfile = fopen(".neogit/reset", "a");
+    if (resetfile == NULL) {
+        perror("error opening reset file");
+        fclose(resetfile);
+        return 1;
+    }
+
+    while (ch = fgetc(stagingfile) != '\0'){
+        fprintf(resetfile, "%c", ch);
+    }
+    fputs("\n", resetfile);
+    
+    remove(".neogit/staging");
+    rename(".neogit/tmp_staging", ".neogit/staging");
+    fprintf(stdout, "reset -undo done\n");
+    return 0;
+}
+
 
 void print_command(int argc, char * const argv[]) {
     for (int i = 0; i < argc; i++) {
@@ -458,7 +643,6 @@ void print_command(int argc, char * const argv[]) {
     }
     fprintf(stdout, "\n");
 }
-
 
 int main(int argc , char *argv[])
 {
@@ -481,5 +665,8 @@ int main(int argc , char *argv[])
     }
     else if (! strcmp(argv[1], "add")){
         return run_add(argc, argv);
+    }
+    else if (! strcmp(argv[1], "reset")){
+        return run_reset(argc, argv);
     }
 }
