@@ -6,7 +6,9 @@
 #include <sys/stat.h>
 #include <stdbool.h>
 #include <windows.h>
+#include <time.h>
 
+#define MAX_NAME_LENGTH 1000
 #define MAX_FILENAME_LENGTH 1000
 #define MAX_COMMIT_MESSAGE_LENGTH 2000
 #define MAX_LINE_LENGTH 1000
@@ -35,7 +37,7 @@ int run_reset(int argc, char * const argv[]);
 int remove_from_staging(char *filepath, char mode);
 int run_reset_undo();
 
-int run_commit(int argc, char * const argv[]);
+int run_commit(char message[]);
 int inc_last_commit_ID();
 int exists_in_files(char *filepath);
 int commit_staged_file(int commit_ID, char* filepath);
@@ -43,6 +45,13 @@ int track_file(char *filepath);
 bool is_tracked(char *filepath);
 int create_commit_file(int commit_ID, char *message);
 int find_file_last_commit(char* filepath);
+
+int run_set(int argc,char * const argv[]);
+bool shortcut_exist(char name[], char message[]);
+int run_commit_s(int argc, char * const argv[]);
+int run_replace(int argc, char *argv[]);
+int run_remove(int argc, char *argv[]);
+
 
 int neogit_exist()
 {
@@ -181,6 +190,9 @@ int creat_configs(char *username, char *email)
     fclose(file);
 
     file = fopen(".neogit/reset", "w");
+    fclose(file);
+
+    file = fopen(".neogit/shortcut", "w");
     fclose(file);
 
     return 0;
@@ -645,12 +657,7 @@ int run_reset_undo()
     return 0;
 }
 
-int run_commit(int argc, char * const argv[]) {
-    if (argc < 4) {
-        perror("please use the correct format");
-        return 1;
-    }
-
+int run_commit(char message[]) {
     if(neogit_exist == 0)
     {
         perror("neogit repository has not initialized yet");
@@ -662,15 +669,9 @@ int run_commit(int argc, char * const argv[]) {
         perror("staging file is empty");
     }
 
-    char message[MAX_MESSAGE_LENGTH];
-    strcpy(message, argv[3]);
-    if(argc > 4){
-        strcpy(message, "\"");
-        for(int i = 4; i < argc; i++){
-            strcat(message, " ");
-            strcat(message, argv[i]);
-        }
-        strcat(message, "\"");
+    if(strlen(message) > 72){
+        perror("message is too long");
+        return 1;
     }
 
     int commit_ID = inc_last_commit_ID();
@@ -713,8 +714,15 @@ int run_commit(int argc, char * const argv[]) {
     }
     fclose(stagingfile);
 
+    time_t currentTime;
+    time(&currentTime);
+    struct tm *localTime = localtime(&currentTime);
+    char timeString[50];
+    strftime(timeString, sizeof(timeString), "Formatted time: %Y-%m-%d %H:%M:%S", localTime);
+
     create_commit_file(commit_ID, message);
     fprintf(stdout, "commit successfully with commit ID %d", commit_ID);
+    fprintf(stdout, "your message: %s, time: %s", message, timeString);
     return 0;
 }
 
@@ -864,6 +872,14 @@ int create_commit_file(int commit_ID, char *message) {
     }
 
     fprintf(file, "message: %s\n", message);
+
+    time_t currentTime;
+    time(&currentTime);
+    struct tm *localTime = localtime(&currentTime);
+    char timeString[50];
+    strftime(timeString, sizeof(timeString), "Formatted time: %Y-%m-%d %H:%M:%S", localTime);
+    fprintf(file, "time: %s", timeString);
+
     fprintf(file, "files:\n");
     
     DIR *dir = opendir(".");
@@ -905,6 +921,204 @@ int find_file_last_commit(char* filepath) {
     return max;
 }
 
+int run_set(int argc,char * const argv[])
+{
+    if(neogit_exist == 0)
+    {
+        perror("neogit repository has not initialized yet");
+        return 1;
+    }
+
+    char message[MAX_MESSAGE_LENGTH];
+    char name[MAX_MESSAGE_LENGTH];
+    strcpy(message, argv[3]);
+    strcpy(message, argv[3]);
+    
+    FILE *shortcutfile;
+    shortcutfile = fopen(".neogit/shortcut", "w");
+    if(shortcutfile == NULL){
+        perror("error opening shortcut file");
+        return 1;
+    }
+    fprintf(shortcutfile, "%s %s\n", name, message);
+    fclose(shortcutfile);
+    fprintf(stdout, "set done successfully");
+    return 0;
+}
+
+bool shortcut_exist(char name[], char message[])
+{
+    FILE *shortcutFile = fopen(".neogit/shortcut", "r");
+    if (shortcutFile == NULL) {
+        perror("error opening shortcut file");
+        fclose(shortcutFile);
+        return false;
+    }
+    char shrct_name[MAX_NAME_LENGTH];
+    char shrct_message[MAX_MESSAGE_LENGTH];
+
+    char line[MAX_LINE_LENGTH];
+    while (fgets(line, sizeof(line), shortcutFile) != NULL) {
+        int length = strlen(line);
+
+        // remove '\n'
+        if (length > 0 && line[length - 1] == '\n') {
+            line[length - 1] = '\0';
+        }
+
+        sscanf(line, "%s %s",shrct_name, shrct_message);
+        if(strcmp(name, shrct_name) == 0) {
+            fclose(shortcutFile);
+            strcpy(message, shrct_message);
+            return true;
+        }   
+    }
+
+    fclose(shortcutFile);
+    return false;
+}
+
+int run_commit_s(int argc, char * const argv[])
+{
+    if(argc < 4)
+    {
+        perror("please use the correct format");
+        return 1;
+    }
+    if(neogit_exist == 0)
+    {
+        perror("neogit repository has not initialized yet");
+        return 1;
+    }
+
+    char message[MAX_NAME_LENGTH];
+    if(! shortcut_exist(argv[3], message)){
+        perror("shortcut do not exist");
+        return 1;
+    }
+
+    return run_commit(message);
+}
+
+int run_replace(int argc, char *argv[])
+{
+    if(argc < 6)
+    {
+        perror("please use the correct format");
+        return 1;
+    }
+    if(neogit_exist == 0)
+    {
+        perror("neogit repository has not initialized yet");
+        return 1;
+    }
+
+    char message[MAX_NAME_LENGTH] ;
+    strcpy(message, argv[3]);
+    char shrct_name[MAX_NAME_LENGTH];
+    char shrct_message[MAX_MESSAGE_LENGTH];
+    if(! shortcut_exist(argv[5], message)){
+        perror("shortcut do not exist");
+        return 1;
+    }
+
+    FILE *shortcutFile = fopen(".neogit/shortcut", "r");
+    if (shortcutFile == NULL) {
+        perror("error opening file");
+        return 1;
+    }
+    FILE *tmp_file = fopen(".neogit/tmp_shortcut", "w");
+    if (tmp_file == NULL) {
+        perror("error opening file");
+        return 1;
+    }
+
+    char line[MAX_LINE_LENGTH];
+    while (fgets(line, sizeof(line), shortcutFile) != NULL) {
+        int length = strlen(line);
+
+        // remove '\n'
+        if (length > 0 && line[length - 1] == '\n') {
+            line[length - 1] = '\0';
+        }
+
+        sscanf(line, "%s %s",shrct_name, shrct_message);
+        if(strcmp(argv[5], shrct_name) == 0) {
+            fprintf(tmp_file, "%s %s\n", argv[5], argv[3]);
+        }
+        else{
+            fputs(line, tmp_file);
+            fputs("\n", tmp_file);
+        }
+    }
+
+    fclose(shortcutFile);
+    fclose(tmp_file);
+
+    remove(".neogit/shortcut");
+    rename(".neogit/tmp_shortcut", ".neogit/shortcut");
+
+    fprintf(stdout, "replace done successfully");
+    return 0;
+}
+
+int run_remove(int argc, char *argv[])
+{
+    if(argc < 4)
+    {
+        perror("please use the correct format");
+        return 1;
+    }
+    if(neogit_exist == 0)
+    {
+        perror("neogit repository has not initialized yet");
+        return 1;
+    }
+
+    char message[MAX_NAME_LENGTH];
+    char shrct_name[MAX_NAME_LENGTH];
+    char shrct_message[MAX_MESSAGE_LENGTH];
+    if(! shortcut_exist(argv[3], message)){
+        perror("shortcut do not exist");
+        return 1;
+    }
+
+    FILE *shortcutFile = fopen(".neogit/shortcut", "r");
+    if (shortcutFile == NULL) {
+        perror("error opening file");
+        return 1;
+    }
+    FILE *tmp_file = fopen(".neogit/tmp_shortcut", "w");
+    if (tmp_file == NULL) {
+        perror("error opening file");
+        return 1;
+    }
+
+    char line[MAX_LINE_LENGTH];
+    while (fgets(line, sizeof(line), shortcutFile) != NULL) {
+        int length = strlen(line);
+
+        // remove '\n'
+        if (length > 0 && line[length - 1] == '\n') {
+            line[length - 1] = '\0';
+        }
+
+        sscanf(line, "%s %s",shrct_name, shrct_message);
+        if(strcmp(argv[3], shrct_name) != 0) {
+            fputs(line, tmp_file);
+            fputs("\n", tmp_file);
+        }
+    }
+
+    fclose(shortcutFile);
+    fclose(tmp_file);
+
+    remove(".neogit/shortcut");
+    rename(".neogit/tmp_shortcut", ".neogit/shortcut");
+
+    fprintf(stdout, "replace done successfully");
+    return 0;
+}
 void print_command(int argc, char * const argv[]) {
     for (int i = 0; i < argc; i++) {
         fprintf(stdout, "arg[%d] = %s\n", i , argv[i]);
@@ -938,6 +1152,36 @@ int main(int argc , char *argv[])
         return run_reset(argc, argv);
     }
     else if(! strcmp(argv[1], "commit")){
-        return run_commit(argc, argv);
+        if(! strcmp(argv[2], "-m")){
+            if (argc < 4) {
+            perror("please use the correct format");
+            return 1;
+        }
+        char message[MAX_MESSAGE_LENGTH];
+        strcpy(message, argv[3]);
+        if(argc > 4){
+            strcat(message, "\"");
+            for(int i = 4; i < argc; i++){
+                strcat(message, " ");
+                strcat(message, argv[i]);
+            }
+            strcat(message, "\"");
+        }
+            return run_commit(message);
+        }
+        else if(! strcmp(argv[2], "-s"))
+            return run_commit_s(argc, argv);
+    }
+    else if (strcmp(argv[1], "set") == 0 && strcmp(argv[2], "-m")==0 && strcmp(argv[4], "-s") == 0)
+    {
+        run_set(argc, argv);
+    }
+    else if (strcmp(argv[1], "replace") == 0 && strcmp(argv[2], "-m")==0 && strcmp(argv[4], "-s") == 0)
+    {
+        run_replace(argc, argv);
+    }
+    else if (strcmp(argv[1], "remove") == 0 && strcmp(argv[2], "-s")==0)
+    {
+        run_remove(argc, argv);
     }
 }
