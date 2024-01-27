@@ -17,12 +17,15 @@
 #define print fprintf(stdout, "HERE\n")
 
 
+
 int neogit_exist();
 int file_exists(const char *filename);
 int fnmatch(const char *pattern, const char *string);
 
 int run_global_config(int argc , char *argv[]);
 int run_lokal_config(int argc , char *argv[]);
+void run_alias(char *name, char *commnad, char mode);
+bool find_in_alias(char *name, char *command);
 
 int run_init(int argc, char *argv[]);
 int creat_configs(char *username, char *email);
@@ -932,10 +935,15 @@ int run_set(int argc,char * const argv[])
     char message[MAX_MESSAGE_LENGTH];
     char name[MAX_MESSAGE_LENGTH];
     strcpy(message, argv[3]);
-    strcpy(message, argv[3]);
-    
+    strcpy(name, argv[5]);
+
+    if(shortcut_exist(name, message)){
+        perror("shortcut with this name has already exist");
+        return 1;
+    }
+
     FILE *shortcutfile;
-    shortcutfile = fopen(".neogit/shortcut", "w");
+    shortcutfile = fopen(".neogit/shortcut", "a");
     if(shortcutfile == NULL){
         perror("error opening shortcut file");
         return 1;
@@ -1116,9 +1124,105 @@ int run_remove(int argc, char *argv[])
     remove(".neogit/shortcut");
     rename(".neogit/tmp_shortcut", ".neogit/shortcut");
 
-    fprintf(stdout, "replace done successfully");
+    fprintf(stdout, "remove done successfully");
     return 0;
 }
+
+void run_alias(char *name, char *command, char mode)
+{
+    FILE *configfile;
+    
+    if(mode == 'l'){
+        if(neogit_exist == 0)
+        {
+            configfile = fopen(".neogit/config", "a+");
+            if (configfile == NULL) {
+                perror("Error opening config file");
+                fclose(configfile);
+                return;
+            }
+        }
+        else{
+            perror("neogit repository has not initialized yet");
+            fclose(configfile);
+            return;
+        }
+    }
+    else if(mode == 'g'){
+        configfile = fopen("D:\\uni\\mabani\\neogit\\globalconfig", "a+");
+    }
+
+    fprintf(configfile, "alias: %s %s\n", name , command);
+    fprintf(stdout, "alias done successfully");
+    fclose(configfile);
+}
+
+bool find_in_alias(char *name, char *command)
+{
+    char alias_name[MAX_NAME_LENGTH];
+    char alias_command[MAX_NAME_LENGTH];
+
+    FILE *config_local = fopen(".neogit/config", "r");
+    if (config_local == NULL) {
+        perror("error opening shortcut file");
+        fclose(config_local);
+        return false;
+    }
+
+    char line[MAX_LINE_LENGTH];
+    while (fgets(line, sizeof(line), config_local) != NULL) {
+        int length = strlen(line);
+        // remove '\n'
+        if (length > 0 && line[length - 1] == '\n') {
+            line[length - 1] = '\0';
+        }
+        if(strstr(line, "alias:")){
+            sscanf(line, "alias: %s %[^\n]",alias_name, alias_command);
+            if(strcmp(name, alias_name) == 0) {
+                fclose(config_local);
+                strcpy(command, alias_command);
+                return true;
+            }   
+        }
+    }
+    FILE *config_global = fopen("globalconfig", "r");
+    if (config_global == NULL) {
+        perror("error opening shortcut file");
+        fclose(config_global);
+        return false;
+    }
+    fclose(config_global);
+
+    while (fgets(line, sizeof(line), config_global) != NULL) {
+        int length = strlen(line);
+        // remove '\n'
+        if (length > 0 && line[length - 1] == '\n') {
+            line[length - 1] = '\0';
+        }
+        if(strstr(line, "alias:")){
+            sscanf(line, "alias: %s %[^\n]",alias_name, alias_command);
+            if(strcmp(name, alias_name) == 0) {
+                fclose(config_global);
+                strcpy(command, alias_command);
+                return true;
+            }   
+        }
+    }
+    fclose(config_global);
+
+    return false;
+}
+
+bool command_valid(char* command){
+    if(!strcmp(command, "config") || !strcmp(command, "init") || !strcmp(command, "add") || !strcmp(command, "reset")
+    || !strcmp(command, "status") || !strcmp(command, "commit") || !strcmp(command, "set") || !strcmp(command, "replace")
+    || !strcmp(command, "remove") || !strcmp(command, "log") || !strcmp(command, "branch") || !strcmp(command, "checkout") )
+    {
+        return true;
+    }
+    return false;
+}
+
 void print_command(int argc, char * const argv[]) {
     for (int i = 0; i < argc; i++) {
         fprintf(stdout, "arg[%d] = %s\n", i , argv[i]);
@@ -1134,13 +1238,53 @@ int main(int argc , char *argv[])
         fprintf(stdout, "please enter a valid command");
         return 1;
     }
+    char command[MAX_MESSAGE_LENGTH];
+    if(find_in_alias(argv[1], command)){
+        strcpy(*argv, "neogit ");
+        strcat(*argv, command);
+    }
 
     
     if(! strcmp(argv[1], "config")){
-         if(! strcmp(argv[2], "global"))
-            return run_global_config(argc , argv);
-        else
+        if(! strcmp(argv[2], "-global")){
+            if(! strcmp(argv[3], "user.name") || ! strcmp(argv[3], "user.email"))
+                return run_global_config(argc , argv);
+            else if(argv[3][0] == 'a' && argv[3][1] == 'l' && argv[3][2] == 'i' && argv[3][3] == 'a' && argv[3][4] == 's' && argv[3][5] == '.'){
+                char command[MAX_MESSAGE_LENGTH];
+                strcpy(command, argv[4]);
+                if(argc > 5){
+                    for(int i = 5; i < argc; i++){
+                        strcat(command, " ");
+                        strcat(command, argv[i]);
+                    }   
+                }
+                if(!command_valid(argv[4])){
+                    perror("invalid command in alias");
+                    return 1;
+                }
+                run_alias(argv[3] + 6, command, 'g');
+            }
+                
+        }   
+        else if(! strcmp(argv[2], "user.name") || ! strcmp(argv[2], "user.email"))
             return run_lokal_config(argc , argv);
+        else if (argv[2][0] == 'a' && argv[2][1] == 'l' && argv[2][2] == 'i' && argv[2][3] == 'a' && argv[2][4] == 's' && argv[2][5] == '.' && argc == 4){
+            char command[MAX_MESSAGE_LENGTH];
+            strcpy(command, argv[3]);
+            if(argc > 4){
+                for(int i = 4; i < argc; i++){
+                    strcat(command, " ");
+                    strcat(command, argv[i]);
+                }   
+            }
+            if(!command_valid(argv[3])){
+                perror("invalid command in alias");
+                return 1;
+            }
+            run_alias(argv[2] + 6, command, 'l');
+        }  
+        else
+            fprintf(stdout, "please enter a valid command");
     }
     else if(! strcmp(argv[1], "init")){
         return run_init(argc, argv);
@@ -1174,14 +1318,15 @@ int main(int argc , char *argv[])
     }
     else if (strcmp(argv[1], "set") == 0 && strcmp(argv[2], "-m")==0 && strcmp(argv[4], "-s") == 0)
     {
-        run_set(argc, argv);
+        return run_set(argc, argv);
     }
     else if (strcmp(argv[1], "replace") == 0 && strcmp(argv[2], "-m")==0 && strcmp(argv[4], "-s") == 0)
     {
-        run_replace(argc, argv);
+        return run_replace(argc, argv);
     }
     else if (strcmp(argv[1], "remove") == 0 && strcmp(argv[2], "-s")==0)
     {
-        run_remove(argc, argv);
+        return run_remove(argc, argv);
     }
+    return 0;
 }
