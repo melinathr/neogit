@@ -55,6 +55,10 @@ int run_commit_s(int argc, char * const argv[]);
 int run_replace(int argc, char *argv[]);
 int run_remove(int argc, char *argv[]);
 
+int run_branch(int argc, char * const argv[]);
+bool branch_exist(char name[]);
+void list_branch();
+void list_branch();
 
 int neogit_exist()
 {
@@ -196,6 +200,10 @@ int creat_configs(char *username, char *email)
     fclose(file);
 
     file = fopen(".neogit/shortcut", "w");
+    fclose(file);
+
+    file = fopen(".neogit/branch", "w");
+    fprintf(file, "master\n");
     fclose(file);
 
     return 0;
@@ -1131,7 +1139,10 @@ int run_remove(int argc, char *argv[])
 void run_alias(char *name, char *command, char mode)
 {
     FILE *configfile;
-    
+    if(find_in_alias){
+        perror("this name is already an alias");
+        return;
+    }
     if(mode == 'l'){
         if(neogit_exist == 0)
         {
@@ -1221,6 +1232,140 @@ bool command_valid(char* command){
         return true;
     }
     return false;
+}
+
+int run_checkout(int argc, char * const argv[])
+{
+    if (argc < 3) {
+        perror("invalid command");
+        return 1;
+    }
+
+    if(neogit_exist == 0)
+    {
+        perror("neogit repository has not initialized yet");
+        return 1;
+    }
+
+}
+
+int run_branch(int argc, char * const argv[])
+{
+    if(neogit_exist == 0)
+    {
+        perror("neogit repository has not initialized yet");
+        return 1;
+    }
+
+    char name[MAX_NAME_LENGTH];
+    strcpy(name, argv[2]);
+    if(argc > 3){
+        for(int i = 3; i < argc; i++){
+            strcat(name, " ");
+            strcat(name, argv[i]);
+        }
+    }
+
+    if(branch_exist(name)){
+        perror("branch already exist!");
+        return 1;
+    }
+
+    FILE *branchfile = fopen(".neogit/branch", "a");
+    if (branchfile == NULL) {
+        perror("error opening branch file");
+        fclose(branchfile);
+        return 1;
+    }
+
+    fprintf(branchfile, "%s\n", name);
+    fclose(branchfile);
+
+    FILE *configfile= fopen(".neogit/config", "a+");
+    if (configfile == NULL) {
+        perror("error opening config file");
+        fclose(configfile);
+        return 1;
+    }
+    FILE *tmpconfig = fopen(".neogit/temp_config", "w");
+    if (tmpconfig == NULL) {
+        perror("error opening temp file");
+        fclose(tmpconfig);
+        return 1;
+    }
+
+    char line[MAX_LINE_LENGTH];
+    while (fgets(line, sizeof(line), configfile) != NULL) {
+        int length = strlen(line);
+        // remove '\n'
+        if (length > 0 && line[length - 1] == '\n') {
+            line[length - 1] = '\0';
+        }
+
+        if(strstr(line, "branch:")) {
+            fprintf(tmpconfig, "branch: %s\n", name);
+        }
+        else{
+            fprintf(tmpconfig, "%s\n", line);
+        }
+    }
+    fclose(configfile);
+    fclose(tmpconfig);
+    
+    if (remove(".neogit/config") != 0) {
+        perror("Error removing file");
+        return 1;
+    }
+
+    rename(".neogit/temp_config", ".neogit/config");
+    fprintf(stdout,"branch creat successfully");
+    return 0;
+}
+
+bool branch_exist(char name[])
+{
+    FILE *branchfile = fopen(".neogit/branch", "r");
+    if (branchfile == NULL) {
+        perror("error opening branch file");
+        fclose(branchfile);
+        return false;
+    }
+
+    char line[MAX_LINE_LENGTH];
+    while (fgets(line, sizeof(line), branchfile) != NULL) {
+        int length = strlen(line);
+
+        // remove '\n'
+        if (length > 0 && line[length - 1] == '\n') {
+            line[length - 1] = '\0';
+        }
+
+        if(strcmp(line, name) == 0) {
+            fclose(branchfile);
+            return true;
+        }   
+    }
+
+    fclose(branchfile);
+    return false;
+}
+
+void list_branch()
+{
+    FILE *branchfile = fopen(".neogit/branch", "r");
+    if (branchfile == NULL) {
+        perror("error opening branch file");
+        fclose(branchfile);
+        return;
+    }
+
+    char line[MAX_LINE_LENGTH];
+    while (fgets(line, sizeof(line), branchfile) != NULL) {
+        int length = strlen(line);
+
+        fprintf(stdout, "%s", line);
+    }
+    fclose(branchfile);
 }
 
 void print_command(int argc, char * const argv[]) {
@@ -1327,6 +1472,15 @@ int main(int argc , char *argv[])
     else if (strcmp(argv[1], "remove") == 0 && strcmp(argv[2], "-s")==0)
     {
         return run_remove(argc, argv);
+    }
+    else if (!strcmp(argv[1], "checkout")) {
+        return run_checkout(argc, argv);
+    }
+    else if (!strcmp(argv[1], "branch")) {
+        if(argc > 2)
+            return run_branch(argc, argv);
+        else if(argc == 2)
+            list_branch();
     }
     return 0;
 }
