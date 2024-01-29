@@ -10,13 +10,10 @@
 
 #define MAX_NAME_LENGTH 1000
 #define MAX_FILENAME_LENGTH 1000
-#define MAX_COMMIT_MESSAGE_LENGTH 2000
 #define MAX_LINE_LENGTH 1000
 #define MAX_MESSAGE_LENGTH 1000
 
-#define print fprintf(stdout, "HERE\n")
-
-
+#define print fprintf(stdout, "%s\n", entry->d_name)
 
 int neogit_exist();
 int file_exists(const char *filename);
@@ -59,6 +56,16 @@ int run_branch(int argc, char * const argv[]);
 bool branch_exist(char name[]);
 void list_branch();
 void list_branch();
+
+int run_checkout(int argc, char *const argv[]);
+int find_file_last_change_before_commit(char *filepath, int commit_ID);
+int checkout_file(char *filepath, int commit_ID);
+bool is_digit(char *string);
+int find_commitID(char *filepath, char* branch);
+
+void run_status(char* name);
+void check_status(char* filepath);
+bool is_change(char* filepath);
 
 int neogit_exist()
 {
@@ -889,10 +896,37 @@ int create_commit_file(int commit_ID, char *message) {
     struct tm *localTime = localtime(&currentTime);
     char timeString[50];
     strftime(timeString, sizeof(timeString), "Formatted time: %Y-%m-%d %H:%M:%S", localTime);
-    fprintf(file, "time: %s", timeString);
+    fprintf(file, "time: %s", timeString);  
+
+
+    char *name, *email, *branch;
+    FILE *configfile= fopen(".neogit/config", "r+");
+    if (configfile == NULL) {
+        perror("error opening config file");
+        fclose(configfile);
+        return 1;
+    }
+
+    char line[MAX_LINE_LENGTH];
+    while (fgets(line, sizeof(line), configfile) != NULL) {
+        int length = strlen(line);
+        // remove '\n'
+        if (length > 0 && line[length - 1] == '\n') {
+            line[length - 1] = '\0';
+        }
+        if(strstr(line, "branch:")) 
+            sscanf(line ,"branch: %[^\n]", branch);
+        else if(strstr(line, "username:"))
+            sscanf(line,"username: %[^\n]", name);
+        else if(strstr(line, "email:"))
+            sscanf(line, "email: %[^\n]", email);
+    }
+    fclose(configfile);
+    fprintf(file, "branch: %s\n",branch);
+    fprintf(file, "username: %s\n",name);
+    fprintf(file, "email: %s\n",email);
 
     fprintf(file, "files:\n");
-    
     DIR *dir = opendir(".");
     struct dirent *entry;
     if (dir == NULL) {
@@ -1246,7 +1280,163 @@ int run_checkout(int argc, char * const argv[])
         perror("neogit repository has not initialized yet");
         return 1;
     }
+    
 
+    DIR *dir = opendir(".");
+    struct dirent *entry;
+    while((entry = readdir(dir)) != NULL) {
+        if (entry->d_type == DT_REG && is_tracked(entry->d_name)) {
+            if (is_digit(argv[2])){
+                int commit_ID = atoi(argv[2]);
+
+                if(find_file_last_change_before_commit(entry->d_name, commit_ID) == -1){
+                    perror("wrong commit id");
+                    return 1;
+                }
+                if(is_change(entry->d_name)){
+                    perror("file changed");
+                    return 0;
+                }
+                checkout_file(entry->d_name, find_file_last_change_before_commit(entry->d_name, commit_ID));
+            }
+            else if(!strcmp(argv[2], "HEAD")){
+                //to do
+            }
+            else{
+                char branch[MAX_MESSAGE_LENGTH];
+                strcpy(branch, argv[2]);
+                if(argc > 3){
+                    for(int i = 3; i < argc; i++){
+                        strcat(branch, " ");
+                        strcat(branch, argv[i]);
+                    }
+                }
+                if(find_commitID(entry->d_name, branch) == -1){
+                    perror("wrong commit id");
+                    return 1;
+                }
+                if(is_change(entry->d_name)){
+                    perror("file changed");
+                    return 0;
+                }
+                checkout_file(entry->d_name, find_commitID(entry->d_name, branch));
+            }
+        }
+    }
+        closedir(dir);
+
+    fprintf(stdout,"checkout done successfully");
+    return 0;
+}
+
+int find_file_last_change_before_commit(char *filepath, int commit_ID) {
+    char filepath_dir[MAX_FILENAME_LENGTH];
+    strcpy(filepath_dir, ".neogit/files/");
+    strcat(filepath_dir, filepath);
+
+    int max = -1;
+    
+    DIR *dir = opendir(filepath_dir);
+    struct dirent *entry;
+    if (dir == NULL) {
+        perror("error opening file");
+        return 1;
+    }
+
+    while((entry = readdir(dir)) != NULL) {
+        if (entry->d_type == DT_REG) {
+            int tmp = atoi(entry->d_name);
+            if (tmp > max && tmp <= commit_ID) {
+                max = tmp;
+            }
+        }
+    }
+    closedir(dir);
+
+    return max;
+}
+
+int checkout_file(char *filepath, int commit_ID) {
+    char src_file[MAX_FILENAME_LENGTH];
+    strcpy(src_file, ".neogit/files/");
+    strcat(src_file, filepath);
+    char tmp[10];
+    sprintf(tmp, "/%d", commit_ID);
+    strcat(src_file, tmp);
+
+    FILE *read_file = fopen(src_file, "r");
+    if (read_file == NULL) {
+        perror("error opening file");
+        return 1;
+    }
+    FILE *write_file = fopen(filepath, "w");
+    if (write_file == NULL) {
+        perror("error opening file");
+        return 1;
+    }
+    
+    char line[MAX_LINE_LENGTH];
+
+    while (fgets(line, sizeof(line), read_file) != NULL) {
+        fprintf(write_file, "%s", line);
+    }
+    
+    fclose(read_file);
+    fclose(write_file);
+
+    return 0;
+}
+bool is_digit(char *string)
+{
+    while (*string != '\0')
+    {
+        if (*string > '9' || *string < '0')
+            return false;
+        string++;
+    }
+    return true;
+}
+
+int find_commitID(char *filepath, char* branch)
+{
+    int max = -1;
+    struct dirent *entry;
+    DIR *dir = opendir(".neogit/commits");
+    if(dir == NULL){
+        perror("Error opening commits directory");
+        return 1;
+    }
+
+    int commitID;
+    while((entry = readdir(dir)) != NULL){
+        char path[MAX_FILENAME_LENGTH];
+        strcpy(path, ".neogit/commits/");
+        strcat(path, entry->d_name);
+
+        FILE *file = fopen(path, "r");
+        char line[MAX_LINE_LENGTH];
+        while (fgets(line, sizeof(line), file) != NULL) {
+            int length = strlen(line);
+
+            // remove '\n'
+            if (length > 0 && line[length - 1] == '\n') {
+                line[length - 1] = '\0';
+            }
+
+            if (strstr(line, "branch:") && strstr(line, branch))
+            {
+                commitID = atoi(entry->d_name);
+                if (strstr(line, filepath))
+                {
+                    if(max < commitID) max = commitID;
+                } 
+            } 
+
+        }
+    }
+    closedir(dir);
+
+    return max;
 }
 
 int run_branch(int argc, char * const argv[])
@@ -1281,7 +1471,7 @@ int run_branch(int argc, char * const argv[])
     fprintf(branchfile, "%s\n", name);
     fclose(branchfile);
 
-    FILE *configfile= fopen(".neogit/config", "a+");
+    FILE *configfile= fopen(".neogit/config", "r+");
     if (configfile == NULL) {
         perror("error opening config file");
         fclose(configfile);
@@ -1366,6 +1556,81 @@ void list_branch()
         fprintf(stdout, "%s", line);
     }
     fclose(branchfile);
+}
+
+void run_status(char* name)
+{
+    struct dirent *entry;
+    DIR *dir = opendir(name);
+    if(dir == NULL){
+        perror("Error opening current directory");
+        return;
+    }
+    while((entry = readdir(dir)) != NULL){
+        check_status(entry->d_name);    
+    }
+    closedir(dir);
+}
+
+void check_status(char* filepath)
+{
+    bool is_staged = false;
+    if(check_staging_area(filepath) == 0) is_staged = true;
+
+    char x = '-', y = ' ';
+    if(is_staged || is_tracked(filepath)) x = '+';
+    if(!is_staged && !is_tracked(filepath)) return;
+    if(is_staged && !is_tracked(filepath)) y = 'A';
+    if(is_change(filepath)) y = 'M';
+    if((is_staged || is_tracked(filepath)) && !file_exists(filepath)) y = 'D';
+    fprintf(stdout, "%s %c%c\n", filepath, x, y);
+}
+
+bool is_change(char* filepath)
+{
+    char file[MAX_FILENAME_LENGTH];
+    sprintf(file, ".neogit/files/%s", filepath);
+
+    struct dirent *entry;
+    DIR *dir = opendir(file);
+    if(dir == NULL){
+        perror("Error opening commits directory");
+        return true;
+    }
+
+    int last_commit;
+    while((entry = readdir(dir)) != NULL){
+        last_commit = atoi(entry->d_name);
+    }
+    closedir(dir);
+
+    sprintf(file, ".neogit/files/%s/%d", filepath, last_commit);
+    FILE *commited_file = fopen(file, "r");
+    if (commited_file == NULL) {
+        perror("error opening commited file");
+        fclose(commited_file);
+        return true;
+    }
+    FILE *current_file = fopen(filepath, "r");
+    if (current_file == NULL) {
+        perror("error opening curent file");
+        fclose(current_file);
+        return true;
+    }
+
+    char line1[MAX_LINE_LENGTH];
+    char line2[MAX_LINE_LENGTH];
+    while (fgets(line1, sizeof(line1), commited_file) != NULL && fgets(line2, sizeof(line2), current_file) != NULL) {
+        if (strncmp(line1, line2, MAX_LINE_LENGTH) != 0) {
+            fclose(current_file);
+            fclose(commited_file);
+            return true;
+        }
+    }
+
+    fclose(current_file);
+    fclose(commited_file);
+    return false;
 }
 
 void print_command(int argc, char * const argv[]) {
@@ -1461,16 +1726,13 @@ int main(int argc , char *argv[])
         else if(! strcmp(argv[2], "-s"))
             return run_commit_s(argc, argv);
     }
-    else if (strcmp(argv[1], "set") == 0 && strcmp(argv[2], "-m")==0 && strcmp(argv[4], "-s") == 0)
-    {
+    else if (strcmp(argv[1], "set") == 0 && strcmp(argv[2], "-m")==0 && strcmp(argv[4], "-s") == 0) {
         return run_set(argc, argv);
     }
-    else if (strcmp(argv[1], "replace") == 0 && strcmp(argv[2], "-m")==0 && strcmp(argv[4], "-s") == 0)
-    {
+    else if (strcmp(argv[1], "replace") == 0 && strcmp(argv[2], "-m")==0 && strcmp(argv[4], "-s") == 0) {
         return run_replace(argc, argv);
     }
-    else if (strcmp(argv[1], "remove") == 0 && strcmp(argv[2], "-s")==0)
-    {
+    else if (strcmp(argv[1], "remove") == 0 && strcmp(argv[2], "-s")==0) {
         return run_remove(argc, argv);
     }
     else if (!strcmp(argv[1], "checkout")) {
@@ -1481,6 +1743,9 @@ int main(int argc , char *argv[])
             return run_branch(argc, argv);
         else if(argc == 2)
             list_branch();
+    }
+    else if (!strcmp(argv[1], "status")) {
+        run_status(".");
     }
     return 0;
 }
