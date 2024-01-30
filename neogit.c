@@ -13,7 +13,7 @@
 #define MAX_LINE_LENGTH 1000
 #define MAX_MESSAGE_LENGTH 1000
 
-#define print fprintf(stdout, "%s\n", entry->d_name)
+#define print fprintf(stdout, "HERE\n")
 
 int neogit_exist();
 int file_exists(const char *filename);
@@ -66,6 +66,9 @@ int find_commitID(char *filepath, char* branch);
 void run_status(char* name);
 void check_status(char* filepath);
 bool is_change(char* filepath);
+
+void print_log(char* filepath);
+int run_log(int argc, char *argv[]);
 
 int neogit_exist()
 {
@@ -739,7 +742,7 @@ int run_commit(char message[]) {
     strftime(timeString, sizeof(timeString), "Formatted time: %Y-%m-%d %H:%M:%S", localTime);
 
     create_commit_file(commit_ID, message);
-    fprintf(stdout, "commit successfully with commit ID %d", commit_ID);
+    fprintf(stdout, "commit successfully with commit ID %d\n", commit_ID);
     fprintf(stdout, "your message: %s, time: %s", message, timeString);
     return 0;
 }
@@ -804,7 +807,7 @@ int commit_staged_file(int commit_ID, char* filepath)
     sprintf(tmp, "%d", commit_ID);
     strcat(write_path, tmp);
 
-    read_file = fopen(read_path, "r");
+    read_file = fopen(read_path, "w+");
     if (read_file == NULL) {
         perror("error opening read file");
         return 1;
@@ -888,43 +891,43 @@ int create_commit_file(int commit_ID, char *message) {
         perror("error opening commit filepath");
         return 1;
     }
-
+    fprintf(file, "commitID: %d\n", commit_ID);
     fprintf(file, "message: %s\n", message);
 
     time_t currentTime;
     time(&currentTime);
     struct tm *localTime = localtime(&currentTime);
     char timeString[50];
-    strftime(timeString, sizeof(timeString), "Formatted time: %Y-%m-%d %H:%M:%S", localTime);
+    strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S\n", localTime);
     fprintf(file, "time: %s", timeString);  
 
 
-    char *name, *email, *branch;
-    FILE *configfile= fopen(".neogit/config", "r+");
-    if (configfile == NULL) {
-        perror("error opening config file");
-        fclose(configfile);
-        return 1;
-    }
+    // char *name, *email, *branch;
+    // FILE *configfile= fopen(".neogit/config", "r+");
+    // if (configfile == NULL) {
+    //     perror("error opening config file");
+    //     fclose(configfile);
+    //     return 1;
+    // }
 
-    char line[MAX_LINE_LENGTH];
-    while (fgets(line, sizeof(line), configfile) != NULL) {
-        int length = strlen(line);
-        // remove '\n'
-        if (length > 0 && line[length - 1] == '\n') {
-            line[length - 1] = '\0';
-        }
-        if(strstr(line, "branch:")) 
-            sscanf(line ,"branch: %[^\n]", branch);
-        else if(strstr(line, "username:"))
-            sscanf(line,"username: %[^\n]", name);
-        else if(strstr(line, "email:"))
-            sscanf(line, "email: %[^\n]", email);
-    }
-    fclose(configfile);
-    fprintf(file, "branch: %s\n",branch);
-    fprintf(file, "username: %s\n",name);
-    fprintf(file, "email: %s\n",email);
+    // char line[MAX_LINE_LENGTH];
+    // while (fgets(line, sizeof(line), configfile) != NULL) {
+    //     int length = strlen(line);
+    //     // remove '\n'
+    //     if (length > 0 && line[length - 1] == '\n') {
+    //         line[length - 1] = '\0';
+    //     }
+    //     if(strstr(line, "branch:")) 
+    //         sscanf(line ,"branch: %[^\n]", branch);
+    //     else if(strstr(line, "username:"))
+    //         sscanf(line,"username: %[^\n]", name);
+    //     else if(strstr(line, "email:"))
+    //         sscanf(line, "email: %[^\n]", email);
+    // }
+    // fclose(configfile);
+    // fprintf(file, "branch: %s\n",branch);
+    // fprintf(file, "username: %s\n",name);
+    // fprintf(file, "email: %s\n",email);
 
     fprintf(file, "files:\n");
     DIR *dir = opendir(".");
@@ -1560,6 +1563,12 @@ void list_branch()
 
 void run_status(char* name)
 {
+    if(neogit_exist == 0)
+    {
+        perror("neogit repository has not initialized yet");
+        return;
+    }
+
     struct dirent *entry;
     DIR *dir = opendir(name);
     if(dir == NULL){
@@ -1633,6 +1642,205 @@ bool is_change(char* filepath)
     return false;
 }
 
+void print_log(char* filepath)
+{
+    FILE *file = fopen(filepath, "r+");
+    char line[MAX_LINE_LENGTH];
+    while (fgets(line, sizeof(line), file) != NULL){
+        fprintf(stdout, "%s", line);
+    }
+    fprintf(stdout, "\n");
+    fclose(file);
+}
+
+int run_log(int argc, char *argv[])
+{
+    if(neogit_exist == 0)
+    {
+        perror("neogit repository has not initialized yet");
+        return 1;
+    }
+
+    struct dirent *entry;
+    DIR *dir = opendir(".neogit/commits");
+    if(dir == NULL){
+        perror("Error opening current directory");
+        return 1;
+    }
+    char filepath[MAX_FILENAME_LENGTH];
+    if(argc == 2){
+        while((entry = readdir(dir)) != NULL){
+            sprintf(filepath, ".neogit/commits/%s", entry->d_name);
+            print_log(filepath);
+        }
+    }
+    else if(argc == 4 && !strcmp(argv[2], "-n")){
+        if(!(is_digit(argv[3]))){
+            perror("invalid input");
+            return 1;
+        }
+        int numberoffiles= atoi(argv[3]);
+        int last_commit_id;
+        FILE *file = fopen(".neogit/config", "r+");
+        char line[MAX_LINE_LENGTH];
+        for(int i = 0; i < 3; i++){
+            fgets(line, sizeof(line), file);
+        }
+        sscanf(line,"last_commit_ID: %d", last_commit_id);
+        if(numberoffiles > last_commit_id || numberoffiles <= 0){
+            perror("invalid input");
+            return 1;
+        }
+        for(int i = 0; i < last_commit_id - numberoffiles; i++){
+            entry = readdir(dir);
+        }
+        while((entry = readdir(dir)) != NULL){
+            sprintf(filepath, ".neogit/commits/%s", entry->d_name);
+            print_log(filepath);
+        }
+    }
+    else if(!strcmp(argv[2], "-branch")){
+        char branch[MAX_NAME_LENGTH];
+        strcpy(branch, argv[3]);
+        if(argc > 3){
+            for(int i = 4; i < argc; i++){
+                strcat(branch, " ");
+                strcat(branch, argv[i]);
+            }
+        }
+        if(!branch_exist){
+            perror("branch not exist");
+            return 1;
+        }
+        
+        DIR *dir = opendir(".neogit/commits");
+        if(dir == NULL){
+            perror("Error opening current directory");
+            return 1;
+        }
+        char line[MAX_LINE_LENGTH];
+        char filepath[MAX_FILENAME_LENGTH];
+        struct dirent *entry;
+        while((entry = readdir(dir)) != NULL){
+            sprintf(filepath, ".neogit/commits/%s",entry->d_name);
+            FILE *file = fopen(filepath, "r+");
+            while (fgets(line, sizeof(line), file) != NULL) {
+                if(strstr(line, branch) && strstr(line, "branch:")) {
+                    fclose(file);
+                    print_log(filepath);
+                }
+            }
+            fclose(file);
+        }
+        closedir(dir);
+        return 0;
+    }
+    else if(!strcmp(argv[2], "-author")){
+        char author[MAX_NAME_LENGTH];
+        strcpy(author, argv[3]);
+
+        DIR *dir = opendir(".neogit/commits");
+        if(dir == NULL){
+            perror("Error opening current directory");
+            return 1;
+        }
+        char line[MAX_LINE_LENGTH];
+        char filepath[MAX_FILENAME_LENGTH];
+        struct dirent *entry;
+        while((entry = readdir(dir)) != NULL){
+            sprintf(filepath, ".neogit/commits/%s",entry->d_name);
+            FILE *file = fopen(filepath, "r+");
+            while (fgets(line, sizeof(line), file) != NULL) {
+                if(strstr(line, author) && strstr(line, "username:")) {
+                    printf("%s\n", line);
+                    fclose(file);
+                    print_log(filepath);
+                }
+            }
+            fclose(file);
+        }
+        closedir(dir);
+        return 0;
+    }
+    else if(!strcmp(argv[2], "-search")){
+        for(int i = 3; i < argc; i++){
+        char mode = 'n';
+        if(strchr(argv[i], '*') != NULL) mode = 'w';
+        
+        DIR *dir = opendir(".neogit/commits");
+        if(dir == NULL){
+            perror("Error opening current directory");
+            return -1;
+        }
+        char line[MAX_LINE_LENGTH];
+        char filepath[MAX_FILENAME_LENGTH];
+        char message[MAX_MESSAGE_LENGTH];
+        struct dirent *entry;
+        while((entry = readdir(dir)) != NULL){
+            sprintf(filepath, ".neogit/commits/%s",entry->d_name);
+            FILE *file = fopen(filepath, "r+");
+
+            fgets(line, sizeof(line), file);
+            fgets(line, sizeof(line), file);
+
+            sscanf(line ,"message: %[^\n]",message);
+            if(mode == 'n' && strstr(message, argv[i])){
+                fclose(file);
+                print_log(filepath);
+            }
+            if(mode == 'w' && fnmatch(argv[i], message) == 0){
+                fclose(file);
+                print_log(filepath);
+            }
+            fclose(file);
+        }
+        closedir(dir);
+    }
+    }
+    else if(!strcmp(argv[2], "-since") || !strcmp(argv[2], "-before")){
+        struct tm timeinfo = {0};
+        sscanf(argv[3], "%d-%d-%d %d:%d:%d",
+           &timeinfo.tm_year, &timeinfo.tm_mon, &timeinfo.tm_mday,
+           &timeinfo.tm_hour, &timeinfo.tm_min, &timeinfo.tm_sec);
+        timeinfo.tm_year -= 1900;
+        timeinfo.tm_mon--;
+        time_t input_time = mktime(&timeinfo);
+
+        DIR *dir = opendir(".neogit/commits");
+        if(dir == NULL){
+            perror("Error opening current directory");
+            return 1;
+        }
+        char line[MAX_LINE_LENGTH];
+        char filepath[MAX_FILENAME_LENGTH];
+        struct dirent *entry;
+        while((entry = readdir(dir)) != NULL){
+            sprintf(filepath, ".neogit/commits/%s",entry->d_name);
+            FILE *file = fopen(filepath, "r+");
+            while (fgets(line, sizeof(line), file) != NULL) {
+                if(strstr(line, "time:")) {
+                    struct tm timeinfo = {0};
+                    sscanf(argv[3], "%d-%d-%d %d:%d:%d",
+                        &timeinfo.tm_year, &timeinfo.tm_mon, &timeinfo.tm_mday,
+                        &timeinfo.tm_hour, &timeinfo.tm_min, &timeinfo.tm_sec);
+                    timeinfo.tm_year -= 1900;
+                    timeinfo.tm_mon--;
+                    time_t file_time = mktime(&timeinfo);
+                    if(!strcmp(argv[2], "-since") && file_time >= input_time){
+                        print_log(filepath);
+                    }
+                    if(!strcmp(argv[2], "-before") && file_time <= input_time){
+                        print_log(filepath);
+                    }
+                }
+            }
+            fclose(file);
+        }
+        closedir(dir);
+    }
+    return 0;
+}
+
 void print_command(int argc, char * const argv[]) {
     for (int i = 0; i < argc; i++) {
         fprintf(stdout, "arg[%d] = %s\n", i , argv[i]);
@@ -1649,11 +1857,10 @@ int main(int argc , char *argv[])
         return 1;
     }
     char command[MAX_MESSAGE_LENGTH];
-    if(find_in_alias(argv[1], command)){
+    if(find_in_alias(argv[1], command) && neogit_exist == 0){
         strcpy(*argv, "neogit ");
         strcat(*argv, command);
     }
-
     
     if(! strcmp(argv[1], "config")){
         if(! strcmp(argv[2], "-global")){
@@ -1744,8 +1951,11 @@ int main(int argc , char *argv[])
         else if(argc == 2)
             list_branch();
     }
-    else if (!strcmp(argv[1], "status")) {
+    else if (!strcmp(argv[1], "status") && argc == 2) {
         run_status(".");
+    }
+    else if(!strcmp(argv[1], "log")){
+        return run_log(argc, argv);
     }
     return 0;
 }
