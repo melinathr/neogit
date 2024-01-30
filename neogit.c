@@ -788,7 +788,8 @@ int inc_last_commit_ID() {
     fclose(file);
     fclose(tmp_file);
 
-    remove(".neogit/config");
+    //remove(".neogit/config");
+    system("del .neogit/config");
     rename(".neogit/tmp_config", ".neogit/config");
     return last_commit_ID;
     //returns new commit_ID
@@ -1799,9 +1800,11 @@ int run_log(int argc, char *argv[])
     }
     else if(!strcmp(argv[2], "-since") || !strcmp(argv[2], "-before")){
         struct tm timeinfo = {0};
-        sscanf(argv[3], "%d-%d-%d %d:%d:%d",
-           &timeinfo.tm_year, &timeinfo.tm_mon, &timeinfo.tm_mday,
+        sscanf(argv[3], "%d-%d-%d",
+           &timeinfo.tm_year, &timeinfo.tm_mon, &timeinfo.tm_mday);
+        sscanf(argv[4], "%d:%d:%d",
            &timeinfo.tm_hour, &timeinfo.tm_min, &timeinfo.tm_sec);
+
         timeinfo.tm_year -= 1900;
         timeinfo.tm_mon--;
         time_t input_time = mktime(&timeinfo);
@@ -1819,13 +1822,13 @@ int run_log(int argc, char *argv[])
             FILE *file = fopen(filepath, "r+");
             while (fgets(line, sizeof(line), file) != NULL) {
                 if(strstr(line, "time:")) {
-                    struct tm timeinfo = {0};
-                    sscanf(argv[3], "%d-%d-%d %d:%d:%d",
-                        &timeinfo.tm_year, &timeinfo.tm_mon, &timeinfo.tm_mday,
-                        &timeinfo.tm_hour, &timeinfo.tm_min, &timeinfo.tm_sec);
-                    timeinfo.tm_year -= 1900;
-                    timeinfo.tm_mon--;
-                    time_t file_time = mktime(&timeinfo);
+                    struct tm file_timeinfo = {0};
+                sscanf(line, "time: %d-%d-%d %d:%d:%d",
+                    &file_timeinfo.tm_year, &file_timeinfo.tm_mon, &file_timeinfo.tm_mday,
+                    &file_timeinfo.tm_hour, &file_timeinfo.tm_min, &file_timeinfo.tm_sec);
+                file_timeinfo.tm_year -= 1900;
+                file_timeinfo.tm_mon--;
+                time_t file_time = mktime(&file_timeinfo);
                     if(!strcmp(argv[2], "-since") && file_time >= input_time){
                         print_log(filepath);
                     }
