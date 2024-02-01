@@ -74,6 +74,9 @@ int run_tag(int argc, char * const argv[]);
 bool tag_exist(char name[]);
 int create_tag_file(char *name, char *message, int commit_ID);
 
+int run_grep(int argc, char * const argv[]);
+void find_word(char* filepath, char* word, char mode);
+
 int neogit_exist()
 {
     char cwd[1024];
@@ -1999,6 +2002,63 @@ int create_tag_file(char *name, char *message, int commit_ID) {
     return 0;
 }
 
+int run_grep(int argc, char * const argv[]){
+    if(neogit_exist == 0)
+    {
+        perror("neogit repository has not initialized yet");
+        return 1;
+    }
+
+    if(!file_exists(argv[3])){
+        perror("file does not exist");
+        return 1;
+    }
+
+    if(argc > 6 && !strcmp(argv[6], "-c")){
+        char filepath[MAX_FILENAME_LENGTH];
+        sprintf(filepath, ".neogit/files/%s/%s", argv[3], argv[7]);
+        if(argc == 9 && !strcmp(argv[8], "-n"))
+            find_word(filepath, argv[5], 'l');
+        else if(argc == 8)
+            find_word(filepath, argv[5], 'n');
+            else{
+                perror("invalid command");
+                return 1;
+            }
+    }
+    else if(argc > 6 && !strcmp(argv[6], "-n")){
+        find_word(argv[3], argv[5], 'l');
+    }
+    else if(argc == 6){
+        find_word(argv[3], argv[5], 'n');
+    }
+    else{
+        perror("invalid command");
+        return 1;
+    }
+
+    fprintf(stdout, "grep done successfully");
+    return 0;
+}
+
+void find_word(char* filepath, char* word, char mode)
+{
+    FILE *file = fopen(filepath, "r");
+    char line[MAX_LINE_LENGTH];
+    int num_line = 0;
+    while (fgets(line, sizeof(line), file) != NULL){
+        int length = strlen(line);
+        num_line++;
+
+        if (strstr(line, word))
+        {
+            if(mode == 'l')
+                fprintf(stdout, "%d ", num_line);
+            fprintf(stdout, "%s", line);
+        } 
+    }
+}
+
 void print_command(int argc, char * const argv[]) {
     for (int i = 0; i < argc; i++) {
         fprintf(stdout, "arg[%d] = %s\n", i , argv[i]);
@@ -2117,6 +2177,9 @@ int main(int argc , char *argv[])
     }
     else if(!strcmp(argv[1], "tag")){
         return run_tag(argc, argv);
+    }
+    else if(!strcmp(argv[1], "grep")){
+        return run_grep(argc, argv);
     }
     return 0;
 }
