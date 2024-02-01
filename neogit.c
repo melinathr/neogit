@@ -70,6 +70,10 @@ bool is_change(char* filepath);
 void print_log(char* filepath);
 int run_log(int argc, char *argv[]);
 
+int run_tag(int argc, char * const argv[]);
+bool tag_exist(char name[]);
+int create_tag_file(char *name, char *message, int commit_ID);
+
 int neogit_exist()
 {
     char cwd[1024];
@@ -199,6 +203,7 @@ int creat_configs(char *username, char *email)
 
     if (mkdir(".neogit/commits") != 0) return 1;
     if (mkdir(".neogit/files") != 0) return 1;
+    if (mkdir(".neogit/tags") != 0) return 1;
 
     file = fopen(".neogit/staging", "w");
     fclose(file);
@@ -214,6 +219,9 @@ int creat_configs(char *username, char *email)
 
     file = fopen(".neogit/branch", "w");
     fprintf(file, "master\n");
+    fclose(file);
+
+    file = fopen(".neogit/tag", "w");
     fclose(file);
 
     return 0;
@@ -903,32 +911,32 @@ int create_commit_file(int commit_ID, char *message) {
     fprintf(file, "time: %s", timeString);  
 
 
-    // char *name, *email, *branch;
-    // FILE *configfile= fopen(".neogit/config", "r+");
-    // if (configfile == NULL) {
-    //     perror("error opening config file");
-    //     fclose(configfile);
-    //     return 1;
-    // }
+    char name[MAX_NAME_LENGTH], email[MAX_NAME_LENGTH], branch[MAX_NAME_LENGTH];
+    FILE *configfile= fopen(".neogit/config", "r+");
+    if (configfile == NULL) {
+        perror("error opening config file");
+        fclose(configfile);
+        return 1;
+    }
 
-    // char line[MAX_LINE_LENGTH];
-    // while (fgets(line, sizeof(line), configfile) != NULL) {
-    //     int length = strlen(line);
-    //     // remove '\n'
-    //     if (length > 0 && line[length - 1] == '\n') {
-    //         line[length - 1] = '\0';
-    //     }
-    //     if(strstr(line, "branch:")) 
-    //         sscanf(line ,"branch: %[^\n]", branch);
-    //     else if(strstr(line, "username:"))
-    //         sscanf(line,"username: %[^\n]", name);
-    //     else if(strstr(line, "email:"))
-    //         sscanf(line, "email: %[^\n]", email);
-    // }
-    // fclose(configfile);
-    // fprintf(file, "branch: %s\n",branch);
-    // fprintf(file, "username: %s\n",name);
-    // fprintf(file, "email: %s\n",email);
+    char line[MAX_LINE_LENGTH];
+    while (fgets(line, sizeof(line), configfile) != NULL) {
+        int length = strlen(line);
+        // remove '\n'
+        if (length > 0 && line[length - 1] == '\n') {
+            line[length - 1] = '\0';
+        }
+        if(strstr(line, "branch:")) 
+            sscanf(line ,"branch: %[^\n]", branch);
+        else if(strstr(line, "username:"))
+            sscanf(line,"username: %[^\n]", name);
+        else if(strstr(line, "email:"))
+            sscanf(line, "email: %[^\n]", email);
+    }
+    fclose(configfile);
+    fprintf(file, "branch: %s\n",branch);
+    fprintf(file, "username: %s\n",name);
+    fprintf(file, "email: %s\n",email);
 
     fprintf(file, "files:\n");
     DIR *dir = opendir(".");
@@ -1304,7 +1312,14 @@ int run_checkout(int argc, char * const argv[])
                 checkout_file(entry->d_name, find_file_last_change_before_commit(entry->d_name, commit_ID));
             }
             else if(!strcmp(argv[2], "HEAD")){
-                //to do
+                int last_commit_id;
+                FILE *file = fopen(".neogit/config", "r+");
+                char line[MAX_LINE_LENGTH];
+                for(int i = 0; i < 3; i++){
+                fgets(line, sizeof(line), file);
+                }
+                sscanf(line,"last_commit_ID: %d", last_commit_id);
+                checkout_file(entry->d_name, last_commit_id);
             }
             else{
                 char branch[MAX_MESSAGE_LENGTH];
@@ -1844,6 +1859,146 @@ int run_log(int argc, char *argv[])
     return 0;
 }
 
+int run_tag(int argc, char * const argv[])
+{
+    if(neogit_exist == 0)
+    {
+        perror("neogit repository has not initialized yet");
+        return 1;
+    }
+
+    if(argc == 2){
+        struct dirent *entry;
+        DIR *dir = opendir(".neogit/tags");
+        if(dir == NULL){
+            perror("Error opening current directory");
+            return 1;
+        }
+        while((entry = readdir(dir)) != NULL){
+            if(entry->d_type == DT_REG)
+                fprintf(stdout, "%s\n", entry->d_name);   
+        }
+        closedir(dir);
+    }
+    else if(strcmp(argv[2] ,"-a") == 0){
+        if(tag_exist(argv[3])){
+            perror("tag already exist");
+            return 1;
+        }
+        FILE *tagFile = fopen(".neogit/tag", "a");
+        fprintf(tagFile ,"%s\n", argv[3]);
+        fclose(tagFile);
+
+        if(argc > 6 && strcmp(argv[4], "-m") == 0 && strcmp(argv[6], "-c") == 0){
+            printf("wrong1\n");
+            create_tag_file(argv[3], argv[5], atoi(argv[7]));
+        }
+        else if(strcmp(argv[4], "-m") == 0){
+            int last_ID;
+            FILE *config_file = fopen(".neogit/config", "r");
+            char line[MAX_LINE_LENGTH];
+            for(int i = 0; i < 3; i++){
+                fgets(line, sizeof(line), config_file);   
+            }
+            sscanf(line,"last_commit_ID: %d", last_ID);
+            create_tag_file(argv[3], argv[5], last_ID);
+        }
+        else if(strcmp(argv[4], "-c") == 0){
+            create_tag_file(argv[3], "no message", atoi(argv[5]));
+        }
+        else{
+            perror("invalid command");
+            return 1;
+        }
+        fprintf(stdout, "tag create successfully");
+        return 0;
+    }
+    else if(strcmp(argv[2] ,"show") == 0){
+        char filepath[MAX_FILENAME_LENGTH];
+    
+        sprintf(filepath, ".neogit/tags/%s", argv[3]);
+
+        FILE *tag_file = fopen(filepath, "r");
+        char line[MAX_LINE_LENGTH];
+        while(fgets(line, sizeof(line), tag_file) != NULL)
+        {
+            fprintf(stdout, "%s", line);
+        }
+    }
+
+}
+
+bool tag_exist(char name[])
+{
+    FILE *tagfile = fopen(".neogit/tag", "r");
+    if (tagfile == NULL) {
+        perror("error opening tag file");
+        fclose(tagfile);
+        return false;
+    }
+
+    char line[MAX_LINE_LENGTH];
+    while (fgets(line, sizeof(line), tagfile) != NULL) {
+        int length = strlen(line);
+
+        // remove '\n'
+        if (length > 0 && line[length - 1] == '\n') {
+            line[length - 1] = '\0';
+        }
+
+        if(strcmp(line, name) == 0) {
+            fclose(tagfile);
+            return true;
+        }   
+    }
+
+    fclose(tagfile);
+    return false;
+}
+
+int create_tag_file(char *name, char *message, int commit_ID) {
+    char tag_filepath[MAX_FILENAME_LENGTH];
+    strcpy(tag_filepath, ".neogit/tags/");
+    sprintf(tag_filepath,".neogit/tags/%s", name);
+
+    FILE *tag_file = fopen(tag_filepath, "w");
+    if (tag_file == NULL) {
+        perror("error opening commit filepath");
+        return 1;
+    }
+    fprintf(tag_file, "tag %s\n", name);
+    fprintf(tag_file, "commitID: %d\n", commit_ID);
+    fprintf(tag_file, "message: %s\n", message);
+
+    time_t currentTime;
+    time(&currentTime);
+    struct tm *localTime = localtime(&currentTime);
+    char timeString[50];
+    strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S\n", localTime);
+    fprintf(tag_file, "time: %s", timeString);
+
+    char filepath[MAX_FILENAME_LENGTH];
+    sprintf(filepath, ".neogit/commits/%d", commit_ID);
+
+    FILE *commit_file = fopen(filepath, "r");
+    char line[MAX_LINE_LENGTH];
+    for(int i = 0; i < 5; i++){
+        fgets(line, sizeof(line), commit_file);   
+    }
+    int length = strlen(line);
+    if (length > 0 && line[length - 1] == '\n') {
+        line[length - 1] = '\0';
+    }
+    char username[MAX_NAME_LENGTH], email[MAX_NAME_LENGTH];
+    sscanf(line, "username: %s", username);
+    fgets(line, sizeof(line), commit_file);
+    sscanf(line, "email: %s", email);
+    
+    fprintf(tag_file, "Author:: %s <%s>", username, email);
+    fclose(tag_file);
+    return 0;
+}
+
 void print_command(int argc, char * const argv[]) {
     for (int i = 0; i < argc; i++) {
         fprintf(stdout, "arg[%d] = %s\n", i , argv[i]);
@@ -1959,6 +2114,9 @@ int main(int argc , char *argv[])
     }
     else if(!strcmp(argv[1], "log")){
         return run_log(argc, argv);
+    }
+    else if(!strcmp(argv[1], "tag")){
+        return run_tag(argc, argv);
     }
     return 0;
 }
