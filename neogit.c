@@ -77,6 +77,10 @@ int create_tag_file(char *name, char *message, int commit_ID);
 int run_grep(int argc, char * const argv[]);
 void find_word(char* filepath, char* word, char mode);
 
+int run_diff(char *file1, char *file2, int line1_start, int line1_end, int line2_start, int line2_end);
+void remove_spaces(char *str);
+void compare_commits(int commitID1, int commitID2);
+
 int neogit_exist()
 {
     char cwd[1024];
@@ -517,6 +521,34 @@ int fnmatch(const char *pattern, const char *string) {
         }
     }
     return (*pattern == '\0' && *string == '\0') ? 0 : 1;
+}
+
+int wildcard_match(const char *str, const char *pattern) {
+    while (*str) {
+        if (*pattern == '*') {
+            do {
+                ++pattern;
+            } while (*pattern == '*');
+
+            if (*pattern != '\0' && *pattern != *str) {
+                return 0;
+            }
+
+            while (*str && *str != *pattern) {
+                ++str;
+            }
+        } else if (*str == *pattern) {
+            ++str;
+            ++pattern;
+        } else {
+            return 0;
+        }
+    }
+    while (*pattern == '*') {
+        ++pattern;
+    }
+
+    return *pattern == '\0';
 }
 
 int run_reset(int argc, char *const argv[]) {
@@ -2050,13 +2082,120 @@ void find_word(char* filepath, char* word, char mode)
         int length = strlen(line);
         num_line++;
 
-        if (strstr(line, word))
-        {
+        if(strstr(line, word)){
             if(mode == 'l')
                 fprintf(stdout, "%d ", num_line);
             fprintf(stdout, "%s", line);
-        } 
+        }
     }
+}
+
+int run_diff(char *file1, char *file2, int line1_start, int line1_end, int line2_start, int line2_end)
+{
+    if(neogit_exist == 0)
+    {
+        perror("neogit repository has not initialized yet");
+        return 1;
+    }
+
+    if(!file_exists(file1) || !file_exists(file1)){
+        perror("files not exists\n");
+        return 1;
+    }
+
+    FILE *fp1 = fopen(file1, "r");
+    FILE *fp2 = fopen(file2, "r");
+    if (fp1 == NULL || fp2 == NULL) {
+        perror("Error opening files.\n");
+        return 1;
+    }
+
+    char line1[1000], line2[1000];
+    int curline1 = 1, curline2 = 1;
+
+    bool diff_found = false;
+
+    while (fgets(line1, sizeof(line1), fp1) != NULL && fgets(line2, sizeof(line2), fp2) != NULL) {
+        char cpy_line1[1000], cpy_line2[1000];
+        strcpy(cpy_line1, line1);
+        strcpy(cpy_line2, line2);
+
+        if(strcmp(line1, "\n") == 0){
+            while (strcmp(line1, "\n") == 0){
+                fgets(line1, sizeof(line1), fp1);
+                curline1++;
+            }
+        }
+        if(strcmp(line2, "\n") == 0){
+            while (strcmp(line2, "\n") == 0){
+                fgets(line2, sizeof(line2), fp2);
+                curline2++;
+            }
+        }
+
+        remove_spaces(line1);
+        remove_spaces(line2);
+
+        if ((curline1 >= line1_start && curline1 <= line1_end) || (line1_start == 0 && line1_end == 0)) {
+            if ((curline2 >= line2_start && curline2 <= line2_end) || (line2_start == 0 && line2_end == 0)) {
+                if (strcmp(line1, line2) != 0) {
+                    fprintf(stdout,"FILE 1 Line %d : %s", curline1, cpy_line1);
+                    fprintf(stdout ,"FILE 2 Line %d : %s", curline2, cpy_line2);
+                    diff_found = true;
+                }
+            }
+            curline2++;
+        }
+        curline1++;
+    }
+    if(! diff_found)
+        fprintf(stdout,"files match");
+    fclose(fp1);
+    fclose(fp2);
+    return 0;
+}
+
+void remove_spaces(char *str)
+{
+    int i, j = 0;
+    for (i = 0; str[i] != '\0'; i++) {
+        if (str[i] != ' ' && str[i] != '\t' && str[i] != '\n') {
+            str[j++] = str[i];
+        }
+    }
+    str[j] = '\0';
+}
+
+void compare_commits(int commitID1, int commitID2)
+{
+    char filepath1[MAX_FILENAME_LENGTH], filepath2[MAX_FILENAME_LENGTH];
+    sprintf(filepath1,".neogit/commit/%d", commitID1);
+    FILE *file1 = fopen(filepath1, "r");
+
+    sprintf(filepath2,".neogit/commit/%d", commitID2);
+    FILE *file2 = fopen(filepath2, "r");
+
+    if (filepath1 == NULL || filepath2 == NULL) {
+        perror("Error opening files.\n");
+        return;
+    }
+    fseek(file1, sizeof(char), SEEK_SET);
+    char line1[MAX_LINE_LENGTH], line2[MAX_LINE_LENGTH];
+    for(int i = 0; i < 7; i++){
+       fgets(line1, sizeof(line1), file1);
+       fgets(line2, sizeof(line2), file2);
+    }
+
+    while(fgets(line1, sizeof(line1), file1) != NULL){
+        while(fgets(line2, sizeof(line2), file2) != NULL){
+            if (strcmp(line1, line2) == 0){
+                char path1[MAX_FILENAME_LENGTH], path2[MAX_FILENAME_LENGTH];
+                sprintf(path1,".neogit/files/%s/%d", line1,commitID1);
+                sprintf(path2,".neogit/files/%s/%d", line2,commitID2);
+                run_diff(path1, path2, 0, 0, 0, 0);
+            } 
+        }
+    } 
 }
 
 void print_command(int argc, char * const argv[]) {
@@ -2181,5 +2320,27 @@ int main(int argc , char *argv[])
     else if(!strcmp(argv[1], "grep")){
         return run_grep(argc, argv);
     }
+    else if(!strcmp(argv[1], "diff")){
+        if(!strcmp(argv[2], "-f")){
+            int line1_start = 0, line1_end = 0, line2_start = 0, line2_end = 0;
+            for (int i = 3; i < argc; i++) {
+                if (strcmp(argv[i], "-line1") == 0) {
+                    sscanf(argv[i + 1], "%d-%d", &line1_start, &line1_end);
+                }
+                else if (strcmp(argv[i], "-line2") == 0) {
+                    sscanf(argv[i + 1], "%d-%d", &line2_start, &line2_end);
+                }
+            }
+            run_diff(argv[3], argv[4], line1_start, line1_end, line2_start, line2_end);
+        }
+        else if(!strcmp(argv[2], "-c")){
+            compare_commits(atoi(argv[3]) , atoi(argv[4]));
+        }
+        else{
+            perror("invalid command");
+            return 1;
+        }
+    }
+    
     return 0;
 }
