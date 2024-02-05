@@ -121,16 +121,16 @@ int neogit_exist()
         if (strcmp(tmp_cwd, "/") != 0){
             if (chdir("..") != 0) return 1;
         }
-    }while (strcmp(tmp_cwd, "/") != 0);
+    }while (strcmp(tmp_cwd, "D:\\") != 0);
     
     if (chdir(cwd) != 0) return 1;
 
     if(exists){ 
-        //exists
+        //not exists
         return 0;
     }
     else{
-        //not exists
+        //exists
         return 1;
     }
 }
@@ -142,10 +142,35 @@ int file_exists(const char *filename) {
 int run_global_config(int argc , char *argv[]){
     FILE *file = fopen("D:\\uni\\mabani\\neogit\\globalconfig", "a+");
 
+    char line1[MAX_LINE_LENGTH];
+    fgets(line1, sizeof(line1), file);
+    char line2[MAX_LINE_LENGTH];
+    fgets(line2, sizeof(line2), file);
+
     if(! strcmp(argv[3], "user.name")){
+        if(strstr(line1, "username:")){
+            fclose(file);
+            file = fopen("D:\\uni\\mabani\\neogit\\globalconfig", "w");
+            fprintf(file,"%s", line2);
+        }
+        if(strstr(line2, "username:")){
+            fclose(file);
+            file = fopen("D:\\uni\\mabani\\neogit\\globalconfig", "w");
+            fprintf(file,"%s", line1);
+        }
         fprintf(file, "username: %s\n", argv[4]);
     }
     else if(! strcmp(argv[3], "user.email")){
+        if(strstr(line1, "email:")){
+            fclose(file);
+            file = fopen("D:\\uni\\mabani\\neogit\\globalconfig", "w");
+            fprintf(file,"%s", line2);
+        }
+        if(strstr(line2, "email:")){
+            fclose(file);
+            file = fopen("D:\\uni\\mabani\\neogit\\globalconfig", "w");
+            fprintf(file,"%s", line1);
+        }
         fprintf(file, "email: %s\n", argv[4]);
     }
     else {
@@ -424,7 +449,7 @@ int add_to_staging(char *filepath , char mode)
         closedir(dir);
     }
     fclose(stagingfile);
-    fprintf(stdout, "adds to staging area\n");
+    fprintf(stdout, "%s adds to staging area\n", filepath);
     return 0;
 }
 
@@ -502,14 +527,13 @@ int redo()
     char line[MAX_LINE_LENGTH];
     while (fgets(line, sizeof(line), resetfile) != NULL){
         int length = strlen(line);
-        
+
         // remove '\n'
         if (length > 0 && line[length - 1] == '\n') {
             line[length - 1] = '\0';
         }
 
         if(!is_staged(line)){
-            print;
             fprintf(stagingfile, "%s\n", line);
         }
     }
@@ -637,7 +661,7 @@ int run_reset(int argc, char *const argv[]) {
         return 1;
     }
 
-    if(strcmp(argv[2], "undo") == 0){
+    if(strcmp(argv[2], "-undo") == 0){
         run_reset_undo();
     }
     else if(strcmp(argv[2], "-f") == 0) {
@@ -748,17 +772,16 @@ int run_reset_undo()
 {
     FILE *stagingfile = fopen(".neogit/staging", "r+");
     if (stagingfile == NULL) {
-        perror("error opening reset file");
+        perror("error opening staging file");
         fclose(stagingfile);
         return 1;
     }
 
     int lineCount = 0;
     char ch;
-    while ((ch = fgetc(stagingfile)) != EOF) {
-        if (ch == '\n') {
-            lineCount++;
-        }
+    char line[MAX_LINE_LENGTH];
+    while (fgets(line, sizeof(line), stagingfile) != NULL){
+        lineCount++;
     }
 
     if (lineCount == 0) {
@@ -771,13 +794,10 @@ int run_reset_undo()
     if (tmp_file == NULL) return 1;
 
     for (int i = 0; i < lineCount - 1; i++) {
-        while (ch = fgetc(stagingfile) != '\n'){
-            fprintf(tmp_file, "%c", ch);
-        }
-        fputs("\n", tmp_file);
+        fgets(line, sizeof(line), stagingfile);
+        fprintf(tmp_file, "%s", line);
     }
     
-
     FILE *resetfile = fopen(".neogit/reset", "a");
     if (resetfile == NULL) {
         perror("error opening reset file");
@@ -785,10 +805,8 @@ int run_reset_undo()
         return 1;
     }
 
-    while (ch = fgetc(stagingfile) != '\0'){
-        fprintf(resetfile, "%c", ch);
-    }
-    fputs("\n", resetfile);
+    fgets(line, sizeof(line), stagingfile);
+    fprintf(resetfile, "%s", line);
     
     remove(".neogit/staging");
     rename(".neogit/tmp_staging", ".neogit/staging");
@@ -1140,7 +1158,7 @@ bool shortcut_exist(char name[], char message[])
             line[length - 1] = '\0';
         }
 
-        sscanf(line, "%s %s",shrct_name, shrct_message);
+        sscanf(line, "%s %[\n]",shrct_name, shrct_message);
         if(strcmp(name, shrct_name) == 0) {
             fclose(shortcutFile);
             strcpy(message, shrct_message);
@@ -1297,7 +1315,7 @@ int run_remove(int argc, char *argv[])
 void run_alias(char *name, char *command, char mode)
 {
     FILE *configfile;
-    if(find_in_alias){
+    if(find_in_alias(name, command)){
         perror("this name is already an alias");
         return;
     }
@@ -1356,11 +1374,10 @@ bool find_in_alias(char *name, char *command)
     }
     FILE *config_global = fopen("globalconfig", "r");
     if (config_global == NULL) {
-        perror("error opening shortcut file");
+        perror("error opening global file");
         fclose(config_global);
         return false;
     }
-    fclose(config_global);
 
     while (fgets(line, sizeof(line), config_global) != NULL) {
         int length = strlen(line);
@@ -1369,7 +1386,7 @@ bool find_in_alias(char *name, char *command)
             line[length - 1] = '\0';
         }
         if(strstr(line, "alias:")){
-            sscanf(line, "alias: %s %[^\n]",alias_name, alias_command);
+            sscanf(line, "alias: %s %[\n]",alias_name, alias_command);
             if(strcmp(name, alias_name) == 0) {
                 fclose(config_global);
                 strcpy(command, alias_command);
@@ -1414,24 +1431,35 @@ int run_checkout(int argc, char * const argv[])
                 int commit_ID = atoi(argv[2]);
 
                 if(find_file_last_change_before_commit(entry->d_name, commit_ID) == -1){
-                    perror("wrong commit id");
-                    return 1;
+                    continue;
                 }
                 if(is_change(entry->d_name)){
-                    perror("file changed");
-                    return 0;
+                    printf("file %s changed\n", entry->d_name);
+                    continue;
                 }
                 checkout_file(entry->d_name, find_file_last_change_before_commit(entry->d_name, commit_ID));
             }
             else if(!strcmp(argv[2], "HEAD")){
-                int last_commit_id;
+                char branch[MAX_NAME_LENGTH];
                 FILE *file = fopen(".neogit/config", "r+");
                 char line[MAX_LINE_LENGTH];
-                for(int i = 0; i < 3; i++){
-                fgets(line, sizeof(line), file);
+                for(int i = 0; i < 5; i++){
+                    fgets(line, sizeof(line), file);
                 }
-                sscanf(line,"last_commit_ID: %d", last_commit_id);
-                checkout_file(entry->d_name, last_commit_id);
+                sscanf(line, "branch: %s", branch);
+                checkout_file(entry->d_name, find_HEAD(branch));
+            }
+            else if(argv[2][0] == 'H' && argv[2][1] == 'E' && argv[2][2] == 'A' && argv[2][3] == 'D' && argv[2][4] == '-'){
+                int x;
+                sscanf(argv[2], "HEAD-%d", x);
+                char branch[MAX_NAME_LENGTH];
+                FILE *file = fopen(".neogit/config", "r+");
+                char line[MAX_LINE_LENGTH];
+                for(int i = 0; i < 5; i++){
+                    fgets(line, sizeof(line), file);
+                }
+                sscanf(line,"branch: %s", branch);
+                checkout_file(entry->d_name, find_HEAD(branch) - x);
             }
             else{
                 char branch[MAX_MESSAGE_LENGTH];
@@ -1444,11 +1472,11 @@ int run_checkout(int argc, char * const argv[])
                 }
                 if(find_commitID(entry->d_name, branch) == -1){
                     perror("wrong commit id");
-                    return 1;
+                    continue;
                 }
                 if(is_change(entry->d_name)){
-                    perror("file changed");
-                    return 0;
+                    printf("file %s changed\n", entry->d_name);
+                    continue;
                 }
                 checkout_file(entry->d_name, find_commitID(entry->d_name, branch));
             }
@@ -1543,6 +1571,9 @@ int find_commitID(char *filepath, char* branch)
         char path[MAX_FILENAME_LENGTH];
         strcpy(path, ".neogit/commits/");
         strcat(path, entry->d_name);
+        if(!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")){
+            continue;
+        }
 
         FILE *file = fopen(path, "r");
         char line[MAX_LINE_LENGTH];
@@ -1557,12 +1588,11 @@ int find_commitID(char *filepath, char* branch)
             if (strstr(line, "branch:") && strstr(line, branch))
             {
                 commitID = atoi(entry->d_name);
-                if (strstr(line, filepath))
-                {
-                    if(max < commitID) max = commitID;
-                } 
             } 
-
+            if (strstr(line, filepath))
+            {
+                if(max < commitID) max = commitID;
+            } 
         }
     }
     closedir(dir);
@@ -1819,7 +1849,7 @@ int run_log(int argc, char *argv[])
             perror("invalid input");
             return 1;
         }
-        for(int i = 0; i < last_commit_id - numberoffiles; i++){
+        for(int i = 0; i < last_commit_id - numberoffiles + 2; i++){
             entry = readdir(dir);
         }
         while((entry = readdir(dir)) != NULL){
@@ -2188,12 +2218,12 @@ int run_grep(int argc, char * const argv[]){
         return 1;
     }
 
-    fprintf(stdout, "grep done successfully");
     return 0;
 }
 
 void find_word(char* filepath, char* word, char mode)
 {
+    bool is_found = false;
     FILE *file = fopen(filepath, "r");
     char line[MAX_LINE_LENGTH];
     int num_line = 0;
@@ -2202,11 +2232,25 @@ void find_word(char* filepath, char* word, char mode)
         num_line++;
 
         if(strstr(line, word)){
+            is_found = true;
             if(mode == 'l')
-                fprintf(stdout, "%d ", num_line);
-            fprintf(stdout, "%s", line);
+                fprintf(stdout, "\033[33m%d \033[0m", num_line);
+            char* token = strtok (line," ");
+            while (token != NULL)
+            {
+                if(! strcmp(token, word)){
+                    fprintf(stdout, "\033[35m%s \033[0m", token);
+                }
+                else{
+                    fprintf(stdout, "%s ", token);
+                }
+                token = strtok(NULL, " ");
+            }
         }
     }
+
+    if(!is_found)
+        fprintf(stdout, "nothing found!\n");
 }
 
 int run_diff(char *file1, char *file2, int line1_start, int line1_end, int line2_start, int line2_end)
@@ -2255,11 +2299,21 @@ int run_diff(char *file1, char *file2, int line1_start, int line1_end, int line2
         remove_spaces(line1);
         remove_spaces(line2);
 
+        // remove '\n'
+        int length = strlen(line1);
+        if (length > 0 && line1[length - 1] == '\n') {
+            line1[length - 1] = '\0';
+        }
+        length = strlen(line1);
+        if (length > 0 && line1[length - 1] == '\n') {
+            line1[length - 1] = '\0';
+        }
+
         if ((curline1 >= line1_start && curline1 <= line1_end) || (line1_start == 0 && line1_end == 0)) {
             if ((curline2 >= line2_start && curline2 <= line2_end) || (line2_start == 0 && line2_end == 0)) {
                 if (strcmp(line1, line2) != 0) {
-                    fprintf(stdout,"%s Line %d : %s",file1 ,curline1, cpy_line1);
-                    fprintf(stdout ,"%s Line %d : %s",file2 , curline2, cpy_line2);
+                    fprintf(stdout,"\033[34m%s Line %d : %s\033[0m",file1 ,curline1, cpy_line1);
+                    fprintf(stdout ,"\033[32m%s Line %d : %s\n\033[0m",file2 , curline2, cpy_line2);
                     diff_found = true;
                 }
             }
@@ -2288,29 +2342,48 @@ void remove_spaces(char *str)
 void compare_commits(int commitID1, int commitID2)
 {
     char filepath1[MAX_FILENAME_LENGTH], filepath2[MAX_FILENAME_LENGTH];
-    sprintf(filepath1,".neogit/commit/%d", commitID1);
-    FILE *file1 = fopen(filepath1, "r");
+    sprintf(filepath1,".neogit/commits/%d", commitID1);
+    FILE *file1 = fopen(filepath1, "r+");
 
-    sprintf(filepath2,".neogit/commit/%d", commitID2);
-    FILE *file2 = fopen(filepath2, "r");
+    sprintf(filepath2,".neogit/commits/%d", commitID2);
+    FILE *file2 = fopen(filepath2, "r+");
 
-    if (file1 == NULL || file2 == NULL) {
-        perror("Error opening files.\n");
-        return;
-    }
+    // if (file1 == NULL || file2 == NULL) {
+    //     perror("Error opening files.\n");
+    //     return;
+    // }
     fseek(file1, sizeof(char), SEEK_SET);
     char line1[MAX_LINE_LENGTH], line2[MAX_LINE_LENGTH];
     for(int i = 0; i < 7; i++){
        fgets(line1, sizeof(line1), file1);
        fgets(line2, sizeof(line2), file2);
+
+        int length = strlen(line1);
+        if (length > 0 && line1[length - 1] == '\n') {
+            line1[length - 1] = '\0';
+        }
+        length = strlen(line2);
+        if (length > 0 && line2[length - 1] == '\n') {
+            line2[length - 1] = '\0';
+        }
     }
 
     while(fgets(line1, sizeof(line1), file1) != NULL){
         while(fgets(line2, sizeof(line2), file2) != NULL){
+            int length = strlen(line1);
+            if (length > 0 && line1[length - 1] == '\n') {
+                line1[length - 1] = '\0';
+            }
+            length = strlen(line2);
+            if (length > 0 && line2[length - 1] == '\n') {
+                line2[length - 1] = '\0';
+            }
+
             if (strcmp(line1, line2) == 0){
                 char path1[MAX_FILENAME_LENGTH], path2[MAX_FILENAME_LENGTH];
                 sprintf(path1,".neogit/files/%s/%d", line1,commitID1);
                 sprintf(path2,".neogit/files/%s/%d", line2,commitID2);
+                printf("path1: %s\npath2: %s\n", path1, path2);
                 run_diff(path1, path2, 0, 0, 0, 0);
             } 
         }
@@ -2371,9 +2444,9 @@ int find_HEAD(char* branch)
             if (length > 0 && line[length - 1] == '\n') {
                 line[length - 1] = '\0';
             }
-
             if (strstr(line, "branch:") && strstr(line, branch))
             {
+                commitID = atoi(entry->d_name);
                 if(max < commitID) max = commitID; 
             } 
 
@@ -2401,7 +2474,7 @@ int run_revert(int argc, char * const argv[]){
         FILE *configfile = fopen(".neogit/config", "r");
         char line[MAX_LINE_LENGTH];
         for(int i = 0; i < 3; i++){
-        fgets(line, sizeof(line), configfile);
+            fgets(line, sizeof(line), configfile);
         }
         sscanf(line,"last_commit_ID: %d", &commitID);
         int x;
@@ -2552,6 +2625,22 @@ void print_command(int argc, char * const argv[]) {
 
 int main(int argc , char *argv[])
 {
+    //coloring prints
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hConsole == INVALID_HANDLE_VALUE) {
+        printf("Error getting console handle\n");
+        return -1;
+    }
+    DWORD consoleMode;
+    if (!GetConsoleMode(hConsole, &consoleMode)) {
+        printf("Error getting console mode\n");
+        return -1;
+    }
+    if (!SetConsoleMode(hConsole, consoleMode)) {
+        printf("Error setting console mode\n");
+        return -1;
+    }
+
     print_command(argc, argv);
     //just input neogit
     if (argc < 2) {
@@ -2559,13 +2648,13 @@ int main(int argc , char *argv[])
         return 1;
     }
     char command[MAX_MESSAGE_LENGTH];
-    if(find_in_alias(argv[1], command) && neogit_exist == 0){
+    if(neogit_exist() == 0 && find_in_alias(argv[1], command)){
         strcpy(*argv, "neogit ");
         strcat(*argv, command);
     }
     
     if(! strcmp(argv[1], "config")){
-        if(! strcmp(argv[2], "-global")){
+        if(! strcmp(argv[2], "global")){
             if(! strcmp(argv[3], "user.name") || ! strcmp(argv[3], "user.email"))
                 return run_global_config(argc , argv);
             else if(argv[3][0] == 'a' && argv[3][1] == 'l' && argv[3][2] == 'i' && argv[3][3] == 'a' && argv[3][4] == 's' && argv[3][5] == '.'){
@@ -2577,7 +2666,7 @@ int main(int argc , char *argv[])
                         strcat(command, argv[i]);
                     }   
                 }
-                if(!command_valid(argv[4])){
+                if(!command_valid(argv[5])){
                     perror("invalid command in alias");
                     return 1;
                 }
@@ -2596,7 +2685,7 @@ int main(int argc , char *argv[])
                     strcat(command, argv[i]);
                 }   
             }
-            if(!command_valid(argv[3])){
+            if(!command_valid(argv[4])){
                 perror("invalid command in alias");
                 return 1;
             }
